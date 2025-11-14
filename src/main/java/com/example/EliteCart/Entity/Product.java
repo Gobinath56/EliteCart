@@ -21,7 +21,7 @@ public class Product {
     private Double price;
 
     @NotBlank(message = "description is required")
-    private String descripation;
+    private String description;  // ✅ Fixed typo
 
     @NotBlank(message = "category is required")
     private String category;
@@ -35,7 +35,7 @@ public class Product {
     private Integer stock;
 
     @PositiveOrZero(message = "Discount must be 0 or positive")
-    private Double discount = 0.0; // 🆕 Discount percentage
+    private Double discount = 0.0;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "product_id")
@@ -44,11 +44,10 @@ public class Product {
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "productid")
     @JsonManagedReference
-    private List<ProductReview> reviwes;
+    private List<ProductReview> reviews;  // ✅ Fixed typo
 
     private Integer numOfReviews = 0;
 
-    // ✅ Dynamic discounted price (not saved in DB)
     @Transient
     public Double getDiscountedPrice() {
         if (discount != null && discount > 0) {
@@ -57,7 +56,7 @@ public class Product {
         return price;
     }
 
-    // ✅ Getters and Setters
+    // Getters and Setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -67,8 +66,8 @@ public class Product {
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }
 
-    public String getDescripation() { return descripation; }
-    public void setDescripation(String descripation) { this.descripation = descripation; }
+    public String getDescription() { return description; }  // ✅ Fixed
+    public void setDescription(String description) { this.description = description; }
 
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
@@ -91,16 +90,15 @@ public class Product {
     public List<ProductImage> getImages() { return images; }
     public void setImages(List<ProductImage> images) { this.images = images; }
 
-    public List<ProductReview> getReviwes() { return reviwes; }
-    public void setReviwes(List<ProductReview> reviwes) { this.reviwes = reviwes; }
+    public List<ProductReview> getReviews() { return reviews; }  // ✅ Fixed
+    public void setReviews(List<ProductReview> reviews) { this.reviews = reviews; }
 
-    // ✅ Add this inside your Product.java
     public void addImage(ProductImage image) {
         if (images == null) {
             images = new java.util.ArrayList<>();
         }
         images.add(image);
-        image.setProduct(this); // maintain relationship both sides
+        image.setProduct(this);
     }
 
     public void removeImage(ProductImage image) {

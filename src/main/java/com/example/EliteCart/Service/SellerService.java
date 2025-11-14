@@ -3,9 +3,13 @@ package com.example.EliteCart.Service;
 import com.example.EliteCart.Entity.Order;
 import com.example.EliteCart.Entity.OrderItem;
 import com.example.EliteCart.Entity.Product;
+import com.example.EliteCart.Entity.User;
+import com.example.EliteCart.Enum.Role;
+import com.example.EliteCart.Exception.ResourceNotFoundException;
 import com.example.EliteCart.Repository.OrderRepository;
 import com.example.EliteCart.Repository.ProductRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.example.EliteCart.Repository.UserRepository;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -16,25 +20,40 @@ import java.util.stream.Collectors;
 @Service
 public class SellerService {
 
-    @Autowired
-    private ProductRepository productRepository;
+    private final ProductRepository productRepository;
+    private final OrderRepository orderRepository;
+    private final UserRepository userRepository;
 
-    @Autowired
-    private OrderRepository orderRepository;
+    public SellerService(ProductRepository productRepository,
+                         OrderRepository orderRepository,
+                         UserRepository userRepository) {
+        this.productRepository = productRepository;
+        this.orderRepository = orderRepository;
+        this.userRepository = userRepository;
+    }
 
-    // ✅ Seller Dashboard Summary
     public Map<String, Object> getSellerDashboard(String sellerName) {
+        // ✅ Verify authenticated seller matches requested sellerName
+        String currentEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        User currentUser = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        // Allow admin or matching seller
+        if (currentUser.getRole() != Role.ROLE_ADMIN &&
+                !currentUser.getUsername().equalsIgnoreCase(sellerName)) {
+            throw new RuntimeException("Access denied: You can only view your own dashboard");
+        }
+
         Map<String, Object> stats = new HashMap<>();
         LocalDate today = LocalDate.now();
 
-        // ✅ 1. Seller Products
         List<Product> sellerProducts = productRepository.findAll().stream()
                 .filter(p -> p.getSeller() != null && p.getSeller().equalsIgnoreCase(sellerName))
                 .collect(Collectors.toList());
         stats.put("seller", sellerName);
         stats.put("totalProducts", sellerProducts.size());
 
-        // ✅ 2. Orders containing seller’s products
         List<Order> sellerOrders = orderRepository.findAll().stream()
                 .filter(order -> order.getItems() != null && order.getItems().stream()
                         .anyMatch(item -> item.getProduct() != null &&
@@ -42,7 +61,6 @@ public class SellerService {
                 .collect(Collectors.toList());
         stats.put("totalOrders", sellerOrders.size());
 
-        // ✅ 3. Revenue Today
         double revenueToday = sellerOrders.stream()
                 .filter(o -> o.getOrderDate() != null && o.getOrderDate().toLocalDate().isEqual(today))
                 .flatMap(o -> o.getItems().stream())
@@ -52,7 +70,6 @@ public class SellerService {
                 .sum();
         stats.put("revenueToday", revenueToday);
 
-        // ✅ 4. Revenue This Month
         LocalDate firstDay = today.with(TemporalAdjusters.firstDayOfMonth());
         LocalDate lastDay = today.with(TemporalAdjusters.lastDayOfMonth());
 
@@ -69,7 +86,6 @@ public class SellerService {
                 .sum();
         stats.put("revenueThisMonth", monthlyRevenue);
 
-        // ✅ 5. Best-Selling Products (FIXED VERSION)
         Map<String, Long> productSales = sellerOrders.stream()
                 .flatMap(order -> order.getItems().stream()
                         .filter(item -> item.getProduct() != null
@@ -97,8 +113,18 @@ public class SellerService {
         return stats;
     }
 
-    // ✅ Seller Orders (History)
     public List<Map<String, Object>> getSellerOrders(String sellerName) {
+        // ✅ Verify authenticated seller matches requested sellerName
+        String currentEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        User currentUser = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (currentUser.getRole() != Role.ROLE_ADMIN &&
+                !currentUser.getUsername().equalsIgnoreCase(sellerName)) {
+            throw new RuntimeException("Access denied: You can only view your own orders");
+        }
+
         return orderRepository.findAll().stream()
                 .flatMap(order -> order.getItems().stream()
                         .filter(item -> item.getProduct() != null &&
@@ -115,10 +141,22 @@ public class SellerService {
                         }))
                 .collect(Collectors.toList());
     }
-    // update the discount
+
     public Map<String, Object> updateProductDiscount(Long productId, Double discount) {
+        // ✅ Get authenticated seller
+        String currentEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        User currentUser = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found with ID: " + productId));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with ID: " + productId));
+
+        // ✅ Verify seller owns this product (unless admin)
+        if (currentUser.getRole() != Role.ROLE_ADMIN &&
+                !product.getSeller().equalsIgnoreCase(currentUser.getUsername())) {
+            throw new RuntimeException("Access denied: You can only update your own products");
+        }
 
         if (discount < 0 || discount > 90) {
             throw new RuntimeException("Invalid discount value. Must be between 0 and 90.");

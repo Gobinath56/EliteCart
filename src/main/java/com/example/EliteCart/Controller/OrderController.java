@@ -1,24 +1,25 @@
 package com.example.EliteCart.Controller;
 
+import com.example.EliteCart.Dtos.CancelOrderDto;
 import com.example.EliteCart.Dtos.OrderRequestDto;
 import com.example.EliteCart.Dtos.OrderResponseDto;
+import com.example.EliteCart.Dtos.UpdateOrderStatusDto;
 import com.example.EliteCart.Entity.Order;
-import com.example.EliteCart.Enum.OrderStatus;
 import com.example.EliteCart.Service.OrderService;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/orders")
 public class OrderController {
 
-    @Autowired
-    private OrderService orderService;
+    private final OrderService orderService;
+
+    public OrderController(OrderService orderService) {
+        this.orderService = orderService;
+    }
 
     @PreAuthorize("hasRole('ROLE_USER')")
     @PostMapping("/create")
@@ -29,36 +30,21 @@ public class OrderController {
 
     @PreAuthorize("hasRole('ROLE_USER') or hasRole('ROLE_ADMIN')")
     @PatchMapping("/{orderId}/cancel")
-    public ResponseEntity<?> cancelOrder(
+    public ResponseEntity<OrderResponseDto> cancelOrder(
             @PathVariable Long orderId,
-            @RequestBody Map<String, String> body) {
+            @Valid @RequestBody CancelOrderDto cancelDto) {
 
-        String reason = body.get("reason");
-        if (reason == null || reason.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Cancellation reason is required");
-        }
-
-        Order cancelled = orderService.cancelOrder(orderId, reason);
+        Order cancelled = orderService.cancelOrder(orderId, cancelDto.getReason());
         return ResponseEntity.ok(orderService.convertToDto(cancelled));
     }
 
     @PreAuthorize("hasRole('ROLE_SELLER') or hasRole('ROLE_ADMIN')")
     @PatchMapping("/{orderId}/status")
-    public ResponseEntity<?> updateOrderStatus(
+    public ResponseEntity<OrderResponseDto> updateOrderStatus(
             @PathVariable Long orderId,
-            @RequestBody Map<String, String> body) {
+            @Valid @RequestBody UpdateOrderStatusDto statusDto) {
 
-        String statusStr = body.get("status");
-        if (statusStr == null || statusStr.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Status is required");
-        }
-
-        try {
-            OrderStatus status = OrderStatus.valueOf(statusStr.toUpperCase());
-            Order updated = orderService.updateDeliveryStatus(orderId, status);
-            return ResponseEntity.ok(orderService.convertToDto(updated));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("Invalid status: " + statusStr);
-        }
+        Order updated = orderService.updateDeliveryStatus(orderId, statusDto.getStatus());
+        return ResponseEntity.ok(orderService.convertToDto(updated));
     }
 }

@@ -1,10 +1,15 @@
 package com.example.EliteCart.Service;
 
+import com.example.EliteCart.Dtos.UpdateUserProfileDto;
+import com.example.EliteCart.Dtos.UserDto;
 import com.example.EliteCart.Entity.Order;
 import com.example.EliteCart.Entity.User;
+import com.example.EliteCart.Enum.Role;
+import com.example.EliteCart.Exception.ResourceNotFoundException;
 import com.example.EliteCart.Repository.OrderRepository;
 import com.example.EliteCart.Repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -12,13 +17,31 @@ import java.util.*;
 @Service
 public class UserService {
 
-    @Autowired
-    private OrderRepository orderRepository;
+    private final OrderRepository orderRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    @Autowired
-    private UserRepository userRepository;
+    public UserService(OrderRepository orderRepository,
+                       UserRepository userRepository,
+                       PasswordEncoder passwordEncoder) {
+        this.orderRepository = orderRepository;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
 
     public List<Map<String, Object>> getOrderHistory(Long userId) {
+        // ✅ Get authenticated user
+        String currentEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        User currentUser = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        // ✅ Verify user can only access their own orders (unless admin)
+        if (!currentUser.getId().equals(userId) &&
+                currentUser.getRole() != Role.ROLE_ADMIN) {
+            throw new RuntimeException("Access denied: You can only view your own orders");
+        }
+
         List<Order> orders = orderRepository.findByUserId(userId);
 
         return orders.stream().map(order -> {
@@ -46,41 +69,48 @@ public class UserService {
         }).toList();
     }
 
-    public Map<String, Object> updateUserProfile(Long userId, Map<String, Object> updates) {
+    public UserDto updateUserProfile(Long userId, UpdateUserProfileDto updateDto) {
+        // ✅ Get authenticated user
+        String currentEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        User currentUser = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        // ✅ Verify user can only update their own profile (unless admin)
+        if (!currentUser.getId().equals(userId) &&
+                currentUser.getRole() != Role.ROLE_ADMIN) {
+            throw new RuntimeException("Access denied: You can only update your own profile");
+        }
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        // ✔ Username editable
-        if (updates.containsKey("username")) {
-            user.setUsername((String) updates.get("username"));
+        // Update fields
+        if (updateDto.getUsername() != null && !updateDto.getUsername().trim().isEmpty()) {
+            user.setUsername(updateDto.getUsername());
         }
 
-        // ✔ Phone number editable
-        if (updates.containsKey("phoneNumber")) {
-            user.setPhoneNumber((String) updates.get("phoneNumber"));
+        if (updateDto.getPhoneNumber() != null && !updateDto.getPhoneNumber().trim().isEmpty()) {
+            user.setPhoneNumber(updateDto.getPhoneNumber());
         }
 
-        // ✔ Password editable (if you add encryption, encode here)
-        if (updates.containsKey("password")) {
-            user.setPassword((String) updates.get("password"));
-        }
-
-        // ❌ Email NOT editable
-        if (updates.containsKey("email")) {
-            throw new RuntimeException("Email cannot be changed once registered!");
+        if (updateDto.getPassword() != null && !updateDto.getPassword().trim().isEmpty()) {
+            // ✅ IMPORTANT: Hash the password!
+            user.setPassword(passwordEncoder.encode(updateDto.getPassword()));
         }
 
         userRepository.save(user);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("message", "Profile updated successfully");
-        response.put("userId", user.getId());
-        response.put("username", user.getUsername());
-        response.put("phoneNumber", user.getPhoneNumber());
-        response.put("email", user.getEmail()); // return original email
-
-        return response;
+        return convertToDto(user);
     }
 
+    private UserDto convertToDto(User user) {
+        UserDto dto = new UserDto();
+        dto.setId(user.getId());
+        dto.setUsername(user.getUsername());
+        dto.setEmail(user.getEmail());
+        dto.setPhoneNumber(user.getPhoneNumber());
+        dto.setRole(user.getRole().name());
+        dto.setActive(user.isActive());
+        return dto;
+    }
 }

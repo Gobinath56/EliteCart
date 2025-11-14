@@ -9,11 +9,14 @@ import com.example.EliteCart.Entity.OrderItem;
 import com.example.EliteCart.Entity.Product;
 import com.example.EliteCart.Entity.User;
 import com.example.EliteCart.Enum.OrderStatus;
+import com.example.EliteCart.Enum.Role;
+import com.example.EliteCart.Exception.ResourceNotFoundException;
 import com.example.EliteCart.Repository.OrderRepository;
 import com.example.EliteCart.Repository.ProductRepository;
 import com.example.EliteCart.Repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -23,33 +26,35 @@ import java.util.stream.Collectors;
 @Service
 public class OrderService {
 
-    @Autowired
-    private OrderRepository orderRepository;
+    private final OrderRepository orderRepository;
+    private final ProductRepository productRepository;
+    private final UserRepository userRepository;
 
-    @Autowired
-    private ProductRepository productRepository;
+    public OrderService(OrderRepository orderRepository,
+                        ProductRepository productRepository,
+                        UserRepository userRepository) {
+        this.orderRepository = orderRepository;
+        this.productRepository = productRepository;
+        this.userRepository = userRepository;
+    }
 
-    @Autowired
-    private UserRepository userRepository;
-
-    // ------------------------------------------------------------
-    // 1) PLACE ORDER
-    // ------------------------------------------------------------
+    @Transactional
     public Order placeOrder(OrderRequestDto orderRequestDto) {
+        // ✅ Use authenticated user instead of userId from request
+        String currentEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        User user = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        User user = userRepository.findById(orderRequestDto.getUserId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        // 🔥 STEP 1: Validate all products belong to ONE seller
+        // Validate all products belong to ONE seller
         String sellerName = null;
 
         for (OrderItemRequestDto item : orderRequestDto.getItems()) {
-
             Product product = productRepository.findById(item.getProductId())
-                    .orElseThrow(() -> new RuntimeException("Product not found: " + item.getProductId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + item.getProductId()));
 
             if (sellerName == null) {
-                sellerName = product.getSeller(); // first product seller
+                sellerName = product.getSeller();
             } else if (!sellerName.equalsIgnoreCase(product.getSeller())) {
                 throw new RuntimeException(
                         "You cannot order products from multiple sellers in a single order. " +
@@ -58,7 +63,7 @@ public class OrderService {
             }
         }
 
-        // 🔥 STEP 2: Create order as usual
+        // Create order
         Order order = new Order();
         order.setUser(user);
         order.setOrderDate(LocalDateTime.now());
@@ -66,20 +71,20 @@ public class OrderService {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setShippingAddress(orderRequestDto.getShippingAddress());
         order.setContactNumber(orderRequestDto.getContactNumber());
+        order.setSeller(sellerName);
 
         double total = 0.0;
         List<OrderItem> orderItems = new ArrayList<>();
 
         for (OrderItemRequestDto itemDto : orderRequestDto.getItems()) {
-
             Product product = productRepository.findById(itemDto.getProductId())
-                    .orElseThrow(() -> new RuntimeException("Product not found: " + itemDto.getProductId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemDto.getProductId()));
 
             if (product.getStock() < itemDto.getQuantity()) {
                 throw new RuntimeException("Insufficient stock for: " + product.getName());
             }
 
-            // decrease stock
+            // Decrease stock
             product.setStock(product.getStock() - itemDto.getQuantity());
             productRepository.save(product);
 
@@ -95,13 +100,9 @@ public class OrderService {
 
         order.setItems(orderItems);
         order.setTotalAmount(total);
-
         return orderRepository.save(order);
     }
 
-    // ------------------------------------------------------------
-    // 2) CONVERT TO DTO
-    // ------------------------------------------------------------
     public OrderResponseDto convertToDto(Order order) {
         OrderResponseDto dto = new OrderResponseDto();
 
@@ -116,6 +117,7 @@ public class OrderService {
         dto.setStatus(order.getStatus());
         dto.setOrderDate(order.getOrderDate());
         dto.setDeliveryDate(order.getDeliveryDate());
+        dto.setCancelReason(order.getCancelReason());
 
         if (!order.getItems().isEmpty()) {
             String sellerName = order.getItems().get(0).getProduct().getSeller();
@@ -134,18 +136,32 @@ public class OrderService {
         return dto;
     }
 
-    // ------------------------------------------------------------
-    // 3) CANCEL ORDER
-    // ------------------------------------------------------------
+    @Transactional
     public Order cancelOrder(Long id, String reason) {
+        // ✅ Get authenticated user
+        String currentEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        User currentUser = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         Order order = orderRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
-        if (order.getStatus() == OrderStatus.CANCELLED)
+        // ✅ Verify user owns this order (or is admin)
+        if (!order.getUser().getId().equals(currentUser.getId()) &&
+                currentUser.getRole() != Role.ROLE_ADMIN) {
+            throw new RuntimeException("Access denied: You can only cancel your own orders");
+        }
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new RuntimeException("Order already cancelled");
+        }
 
-        // restore stock
+        if (order.getStatus() == OrderStatus.DELIVERED) {
+            throw new RuntimeException("Cannot cancel delivered orders");
+        }
+
+        // Restore stock
         for (OrderItem item : order.getItems()) {
             Product p = item.getProduct();
             p.setStock(p.getStock() + item.getQuantity());
@@ -158,20 +174,34 @@ public class OrderService {
         return orderRepository.save(order);
     }
 
-    // ------------------------------------------------------------
-    // 4) UPDATE DELIVERY STATUS (SELLER / ADMIN)
-    // ------------------------------------------------------------
+    @Transactional
     public Order updateDeliveryStatus(Long orderId, OrderStatus status) {
+        // ✅ Get authenticated user
+        String currentEmail = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        User currentUser = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
-        if (order.getStatus() == OrderStatus.CANCELLED)
+        // ✅ Verify seller owns products in this order (or is admin)
+        if (currentUser.getRole() != Role.ROLE_ADMIN) {
+            boolean ownsProducts = order.getItems().stream()
+                    .allMatch(item -> item.getProduct().getSeller()
+                            .equalsIgnoreCase(currentUser.getUsername()));
+
+            if (!ownsProducts) {
+                throw new RuntimeException("Access denied: You can only update orders for your products");
+            }
+        }
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new RuntimeException("Cannot update cancelled orders");
+        }
 
         order.setStatus(status);
 
-        // if delivered → set delivery date
         if (status == OrderStatus.DELIVERED) {
             order.setDeliveryDate(LocalDateTime.now());
         }

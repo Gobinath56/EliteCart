@@ -3,10 +3,10 @@ package com.example.EliteCart.Service;
 import com.example.EliteCart.Entity.Order;
 import com.example.EliteCart.Entity.Product;
 import com.example.EliteCart.Entity.User;
+import com.example.EliteCart.Exception.ResourceNotFoundException;
 import com.example.EliteCart.Repository.OrderRepository;
 import com.example.EliteCart.Repository.ProductRepository;
 import com.example.EliteCart.Repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -17,77 +17,70 @@ import java.util.stream.Collectors;
 @Service
 public class AdminService {
 
-    @Autowired
-    private UserRepository userRepository;
+    private final UserRepository userRepository;
+    private final ProductRepository productRepository;
+    private final OrderRepository orderRepository;
 
-    @Autowired
-    private ProductRepository productRepository;
+    public AdminService(UserRepository userRepository,
+                        ProductRepository productRepository,
+                        OrderRepository orderRepository) {
+        this.userRepository = userRepository;
+        this.productRepository = productRepository;
+        this.orderRepository = orderRepository;
+    }
 
-    @Autowired
-    private OrderRepository orderRepository;
-
-    // ✅ 1. Get all users
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
 
-    // ✅ 2. Block user
     public String blockUser(Long id, String reason) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setActive(false);
         user.setBlockedReason(reason != null ? reason : "Blocked by admin");
         userRepository.save(user);
         return "User " + user.getUsername() + " blocked successfully.";
     }
 
-    // ✅ 3. Unblock user
     public String unblockUser(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setActive(true);
         user.setBlockedReason(null);
         userRepository.save(user);
         return "User " + user.getUsername() + " unblocked successfully.";
     }
 
-    // ✅ 4. Get all products
     public List<Product> getAllProducts() {
         return productRepository.findAll();
     }
 
-    // ✅ 5. Delete product
     public String deleteProduct(Long id) {
         if (!productRepository.existsById(id)) {
-            throw new RuntimeException("Product not found with ID " + id);
+            throw new ResourceNotFoundException("Product not found with ID " + id);
         }
         productRepository.deleteById(id);
         return "Product deleted successfully.";
     }
 
-    // ✅ 6. Get all orders
     public List<Order> getAllOrders() {
         return orderRepository.findAll();
     }
 
-    // ✅ 7. Dashboard Summary (Final Correct Version)
     public Map<String, Object> getDashboard() {
         Map<String, Object> stats = new HashMap<>();
         LocalDate today = LocalDate.now();
 
-        // Orders today
         List<Order> todayOrders = orderRepository.findAll().stream()
                 .filter(o -> o.getOrderDate().toLocalDate().isEqual(today))
                 .toList();
         stats.put("totalOrdersToday", todayOrders.size());
 
-        // Revenue today
         double revenueToday = todayOrders.stream()
                 .mapToDouble(Order::getTotalAmount)
                 .sum();
         stats.put("revenueToday", revenueToday);
 
-        // Monthly revenue
         LocalDate firstDay = today.with(TemporalAdjusters.firstDayOfMonth());
         LocalDate lastDay = today.with(TemporalAdjusters.lastDayOfMonth());
         double monthlyRevenue = orderRepository.findAll().stream()
@@ -99,7 +92,6 @@ public class AdminService {
                 .sum();
         stats.put("revenueThisMonth", monthlyRevenue);
 
-        // ✅ Top rated products (Fixed version)
         List<Map<String, Object>> bestProducts = productRepository.findAll().stream()
                 .sorted((p1, p2) -> Double.compare(
                         Optional.ofNullable(p2.getRatings()).orElse(0.0),

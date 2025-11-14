@@ -9,24 +9,18 @@ public class ProductDto {
     private Long id;
     private String name;
     private String category;
-    private String descripation;
+    private String description;  // ✅ Fixed typo
     private Double price;
     private Double ratings;
     private String seller;
     private Integer stock;
     private Integer numOfReviews;
-
-
-    private Double discount;         // only if > 0
+    private Double discount;
     private Double discountedPrice;
-
-    // ✅ List of review objects (optional)
-    private List<ProductReview> reviwes;
-
-    // ✅ List of image URLs
+    private List<ProductReview> reviews;  // ✅ Fixed typo
     private List<String> imageUrls;
 
-    // ✅ Getters & setters
+    // Getters & setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -36,8 +30,8 @@ public class ProductDto {
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
 
-    public String getDescripation() { return descripation; }
-    public void setDescripation(String descripation) { this.descripation = descripation; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }
@@ -54,25 +48,15 @@ public class ProductDto {
     public Integer getNumOfReviews() { return numOfReviews; }
     public void setNumOfReviews(Integer numOfReviews) { this.numOfReviews = numOfReviews; }
 
-    public List<ProductReview> getReviwes() { return reviwes; }
-    public void setReviwes(List<ProductReview> reviwes) { this.reviwes = reviwes; }
+    public List<ProductReview> getReviews() { return reviews; }
+    public void setReviews(List<ProductReview> reviews) { this.reviews = reviews; }
 
     public List<String> getImageUrls() { return imageUrls; }
     public void setImageUrls(List<String> imageUrls) { this.imageUrls = imageUrls; }
 
-    public Double getDiscount() {
-        return discount;
-    }
+    public Double getDiscount() { return discount; }
+    public void setDiscount(Double discount) { this.discount = discount; }
 
-    public void setDiscount(Double discount) {
-        this.discount = discount;
-    }
-
-    public Double getDiscountedPrice() {
-        return discountedPrice;
-    }
-
-    public void setDiscountedPrice(Double discountedPrice) {
-        this.discountedPrice = discountedPrice;
-    }
+    public Double getDiscountedPrice() { return discountedPrice; }
+    public void setDiscountedPrice(Double discountedPrice) { this.discountedPrice = discountedPrice; }
 }
