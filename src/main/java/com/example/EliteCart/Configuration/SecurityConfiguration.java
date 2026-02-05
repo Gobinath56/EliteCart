@@ -1,6 +1,7 @@
 package com.example.EliteCart.Configuration;
 
 import com.example.EliteCart.Filter.JwtFilter;
+import com.example.EliteCart.Filter.RateLimitFilter;
 import com.example.EliteCart.Service.CustomUserDetailsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -29,6 +30,9 @@ import java.util.List;
 public class SecurityConfiguration {
 
     @Autowired
+    private RateLimitFilter rateLimitFilter;
+
+    @Autowired
     private CustomUserDetailsService customUserDetailsService;
 
     @Autowired
@@ -36,28 +40,29 @@ public class SecurityConfiguration {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
         http
-                // Disable CSRF for stateless JWT API
                 .csrf(csrf -> csrf.disable())
-                // Enable CORS for frontend or Postman requests
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                // Define access control rules
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers(SWAGGER_WHITELIST).permitAll() // Register/Login (public)
-                        .requestMatchers("/admin/**").hasAuthority("ROLE_ADMIN")   // Admin endpoints
-                        .requestMatchers("/seller/**").hasAuthority("ROLE_SELLER") // Seller endpoints
-                        .anyRequest().authenticated()                            // Others need auth
+                        .requestMatchers(SWAGGER_WHITELIST).permitAll()
+                        .requestMatchers("/admin/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/seller/**").hasAuthority("ROLE_SELLER")
+                        .anyRequest().authenticated()
                 )
-                // Stateless session (JWT only)
-                .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // Plug in our custom authentication provider
+                .sessionManagement(sess ->
+                        sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
                 .authenticationProvider(authenticationProvider())
-                // Apply JWT filter before default authentication filter
+
+                // ✅ CORRECT ORDERING
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
+
 
     // Authentication provider using our custom user details service
     @Bean
